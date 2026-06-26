@@ -38,7 +38,7 @@ _SCHEMA_HINT = (
     "customer_po_number (string|null), subtotal (number|null), total_due (number|null), "
     "taxes (array of {jurisdiction, rate, amount}), "
     "line_items (array of {sku, description, quantity, unit_price, line_total}), "
-    "ship_to (array of {site_name, address, cost_centre, allocation}), "
+    "ship_to (array of {site_name, address, cost_centre, allocation (array of strings)}), "
     "notes (array of strings: delivery windows, receiving requirements, duplicate warnings, "
     "cost centres), warnings (array of strings)."
 )

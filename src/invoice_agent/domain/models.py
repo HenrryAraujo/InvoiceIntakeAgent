@@ -88,7 +88,7 @@ class ShipTo(BaseModel):
     site_name: OptStr = None
     address: OptStr = None
     cost_centre: OptStr = None
-    allocation: OptStr = None
+    allocation: StrList = Field(default_factory=list)
 
 
 class Attachment(BaseModel):

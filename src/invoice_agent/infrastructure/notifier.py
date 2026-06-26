@@ -96,7 +96,7 @@ def render_summary(data: InvoiceData) -> str:
             if site.address:
                 parts.append(site.address)
             if site.allocation:
-                parts.append(f"allocation: {site.allocation}")
+                parts.append(f"allocation: {', '.join(site.allocation)}")
             lines.append("- " + " | ".join(parts))
         lines.append("")
 

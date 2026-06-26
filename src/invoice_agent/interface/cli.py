@@ -39,11 +39,19 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def build_use_case(settings: Settings, email_path: str) -> ProcessInvoiceUseCase:
-    """Composition root: construct adapters and inject them into the use case."""
+def build_use_case(
+    settings: Settings,
+    email_path: str,
+    input_dir: Path | None = None,
+) -> ProcessInvoiceUseCase:
+    """Composition root: construct adapters and inject them into the use case.
+
+    ``input_dir`` overrides where the PDF attachment is resolved (used by the API's
+    multipart path); it defaults to ``settings.input_dir``.
+    """
     source = JsonFileInboundEmailSource(
         email_path=Path(email_path),
-        input_dir=settings.input_dir,
+        input_dir=input_dir if input_dir is not None else settings.input_dir,
     )
     extractor = PdfInvoiceExtractor(settings)
     notifier = FileNotificationSender(settings)
