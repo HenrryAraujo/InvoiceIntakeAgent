@@ -133,6 +133,16 @@ Only `gpt-5-mini` and `gpt-5-nano` are accepted for any model setting — any ot
 fails fast at startup. If a PDF has more than `MAX_PAGES` pages and you want every page
 analyzed, raise `MAX_PAGES` (this increases vision cost).
 
+## Tests
+
+```bash
+uv run pytest            # offline suite — no network, no credits
+uv run pytest -m live    # opt-in live test (needs OPENAI_API_KEY in the environment)
+```
+
+The suite uses synthetic fixtures and a faked vision client. The live test is **deselected
+by default** and skipped unless `OPENAI_API_KEY` is present in the environment.
+
 ## Design notes
 
 - **Cost-conscious:** one vision call per run, capped DPI and page count, no retry loops.
@@ -142,4 +152,4 @@ analyzed, raise `MAX_PAGES` (this increases vision cost).
 
 ## Roadmap
 
-A pytest suite and a Docker Compose stack are delivered as subsequent increments.
+A Docker Compose stack is delivered as a subsequent increment.
