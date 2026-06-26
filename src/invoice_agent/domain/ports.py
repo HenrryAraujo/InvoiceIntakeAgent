@@ -6,6 +6,7 @@ imports infrastructure directly.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
@@ -43,16 +44,22 @@ class InvoiceAgentRunner(Protocol):
 
 
 @runtime_checkable
-class RunTracer(Protocol):
-    """Observability boundary (implemented in Phase 3 over MLflow)."""
-
-    def start(self, name: str) -> "RunHandle": ...
-
-    def log_metrics(self, metrics: dict[str, float]) -> None: ...
-
-
-@runtime_checkable
 class RunHandle(Protocol):
+    """A started observability run; logging is best-effort and must never raise."""
+
+    def log_params(self, params: Mapping[str, object]) -> None: ...
+
+    def log_metrics(self, metrics: Mapping[str, float]) -> None: ...
+
+    def set_tags(self, tags: Mapping[str, str]) -> None: ...
+
     def __enter__(self) -> "RunHandle": ...
 
     def __exit__(self, *exc_info: object) -> None: ...
+
+
+@runtime_checkable
+class RunTracer(Protocol):
+    """Observability boundary (implemented over MLflow in the infrastructure layer)."""
+
+    def start_run(self, name: str) -> RunHandle: ...

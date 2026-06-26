@@ -18,6 +18,7 @@ import pymupdf
 
 from invoice_agent.config import Settings
 from invoice_agent.domain.models import InboundEmail, InvoiceData
+from invoice_agent.infrastructure.observability import TokenUsage
 
 _PDF_TEXT_CAP = 6000
 _BODY_CAP = 2000
@@ -64,12 +65,24 @@ def _coverage(data: InvoiceData) -> float:
     return round(100.0 * present / total, 1) if total else 0.0
 
 
+def _usage_from_response(response: Any) -> TokenUsage:
+    usage = getattr(response, "usage", None)
+    if usage is None:
+        return TokenUsage(requests=1)
+    return TokenUsage(
+        input_tokens=int(getattr(usage, "input_tokens", 0) or 0),
+        output_tokens=int(getattr(usage, "output_tokens", 0) or 0),
+        requests=1,
+    )
+
+
 class PdfInvoiceExtractor:
     """``InvoiceExtractor`` built on PyMuPDF + a single OpenAI Responses vision call."""
 
     def __init__(self, settings: Settings, client: Any | None = None) -> None:
         self._settings = settings
         self._client = client
+        self.last_usage: TokenUsage = TokenUsage()
 
     def _ensure_client(self) -> Any:
         if self._client is None:
@@ -79,6 +92,7 @@ class PdfInvoiceExtractor:
         return self._client
 
     def extract(self, pdf_path: Path, email: InboundEmail) -> InvoiceData:
+        self.last_usage = TokenUsage()
         warnings: list[str] = []
         pdf_text, images = self._render(pdf_path, warnings)
         if not images:
@@ -155,6 +169,7 @@ class PdfInvoiceExtractor:
             max_output_tokens=8000,
             store=False,
         )
+        self.last_usage = _usage_from_response(response)
         return json.loads(response.output_text, parse_float=Decimal)
 
     def _map(self, raw: object, email: InboundEmail, warnings: list[str]) -> InvoiceData:

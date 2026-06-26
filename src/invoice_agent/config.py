@@ -48,6 +48,7 @@ class Settings(BaseSettings):
     max_turns: int = Field(default=4, ge=2, le=12)
 
     # --- Observability ---
+    enable_tracing: bool = Field(default=True)
     enable_judge: bool = Field(default=False)
     mlflow_tracking_uri: str = Field(default="sqlite:///mlflow.db")
     mlflow_experiment: str = Field(default="invoice-intake-agent")

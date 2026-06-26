@@ -90,6 +90,26 @@ curl -X POST http://127.0.0.1:8000/process-invoice \
 | `output/outbound_email.txt` | Human-readable, sectioned Customer Service summary |
 | `output/outbound_email.json` | Structured `InvoiceData` payload for downstream processing |
 
+## Observability
+
+Each run logs **privacy-safe** telemetry to MLflow (SQLite-backed by default): only metrics,
+safe params, and content **hashes** — no raw email/PDF text, prompts, or responses, and no
+MLflow autologging.
+
+Per-run metrics include `prompt_tokens` / `completion_tokens` (agent + vision aggregated),
+`estimated_cost_usd`, `latency_ms`, per-tool latencies, `field_coverage_pct`, and
+`validation_passed`; the tool sequence and content hashes are recorded as tags.
+
+View the runs in the MLflow UI:
+
+```bash
+uv run mlflow ui --backend-store-uri sqlite:///mlflow.db
+# then open http://127.0.0.1:5000
+```
+
+Tracing is on by default (`ENABLE_TRACING=false` to disable). An optional `gpt-5-nano`
+faithfulness judge is available behind `ENABLE_JUDGE=true` (off by default to save credits).
+
 ## Configuration
 
 All settings are environment-driven (loaded from `.env`); defaults shown.
@@ -105,6 +125,9 @@ All settings are environment-driven (loaded from `.env`); defaults shown.
 | `RENDER_DPI` | `150` | PDF page render resolution (cost cap) |
 | `MAX_PAGES` | `4` | Max PDF pages sent to the vision model (cost cap) |
 | `MAX_TURNS` | `4` | Max agent turns |
+| `ENABLE_TRACING` | `true` | Log per-run metrics to MLflow |
+| `ENABLE_JUDGE` | `false` | Optional `gpt-5-nano` faithfulness score |
+| `MLFLOW_TRACKING_URI` | `sqlite:///mlflow.db` | MLflow backing store |
 
 Only `gpt-5-mini` and `gpt-5-nano` are accepted for any model setting — any other value
 fails fast at startup. If a PDF has more than `MAX_PAGES` pages and you want every page
@@ -119,5 +142,4 @@ analyzed, raise `MAX_PAGES` (this increases vision cost).
 
 ## Roadmap
 
-MLflow observability, a pytest suite, and a Docker Compose stack are delivered as
-subsequent increments.
+A pytest suite and a Docker Compose stack are delivered as subsequent increments.

@@ -23,6 +23,7 @@ from invoice_agent.infrastructure.inbound_email import (
     JsonFileInboundEmailSource,
 )
 from invoice_agent.infrastructure.notifier import FileNotificationSender, NotificationError
+from invoice_agent.infrastructure.observability import make_tracer
 from invoice_agent.infrastructure.pdf_extractor import PdfInvoiceExtractor
 
 
@@ -55,7 +56,8 @@ def build_use_case(
     )
     extractor = PdfInvoiceExtractor(settings)
     notifier = FileNotificationSender(settings)
-    runner = AgentInvoiceRunner(settings, extractor, notifier)
+    tracer = make_tracer(settings)
+    runner = AgentInvoiceRunner(settings, extractor, notifier, tracer=tracer)
     return ProcessInvoiceUseCase(source, runner)
 
 
