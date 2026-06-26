@@ -1,0 +1,35 @@
+# Version control & IDE
+.git/
+.gitignore
+.vscode/
+.idea/
+
+# Python caches & build outputs
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+build/
+dist/
+
+# Local virtual environment (the image builds its own)
+.venv/
+
+# Secrets — never copy into the build context
+.env
+
+# Runtime artifacts
+output/
+mlruns/
+mlartifacts/
+mlflow.db
+mlflow.db-journal
+mlflow.db-wal
+
+# Provided input data — mounted at runtime, never baked into the image
+data/
+
+# Tests (not needed in the runtime image)
+tests/

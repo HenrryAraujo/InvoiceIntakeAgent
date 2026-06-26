@@ -110,6 +110,27 @@ uv run mlflow ui --backend-store-uri sqlite:///mlflow.db
 Tracing is on by default (`ENABLE_TRACING=false` to disable). An optional `gpt-5-nano`
 faithfulness judge is available behind `ENABLE_JUDGE=true` (off by default to save credits).
 
+## Docker
+
+Run the full stack — the FastAPI app plus an MLflow tracking server (SQLite-backed):
+
+```bash
+docker compose up -d --build
+```
+
+| Service | URL | Notes |
+| --- | --- | --- |
+| `app` (FastAPI) | http://localhost:8000 | `GET /health`, `POST /process-invoice` |
+| `mlflow` (UI) | http://localhost:5000 | per-request run metrics |
+
+The app reads `OPENAI_API_KEY` from `.env`, mounts `./data` read-only, and persists output
+and MLflow data in named volumes. Check health, then stop:
+
+```bash
+curl http://localhost:8000/health
+docker compose down          # add -v to also remove the named volumes
+```
+
 ## Configuration
 
 All settings are environment-driven (loaded from `.env`); defaults shown.
@@ -135,13 +156,37 @@ analyzed, raise `MAX_PAGES` (this increases vision cost).
 
 ## Tests
 
+The suite is **offline by default**: it uses synthetic fixtures (a generated PDF and a mock
+Microsoft Graph email) and a faked vision client, so it makes no network calls and spends
+no credits.
+
 ```bash
-uv run pytest            # offline suite — no network, no credits
-uv run pytest -m live    # opt-in live test (needs OPENAI_API_KEY in the environment)
+# Run the full offline suite
+uv run pytest
+
+# Verbose, and report the reason for any skipped/deselected tests
+uv run pytest -v -ra
+
+# Run a single file, or a single test
+uv run pytest tests/test_pdf_extractor.py
+uv run pytest tests/test_api.py::test_health_returns_ok
 ```
 
-The suite uses synthetic fixtures and a faked vision client. The live test is **deselected
-by default** and skipped unless `OPENAI_API_KEY` is present in the environment.
+It covers every layer: domain models (coercion, `Decimal` integrity, tax/allocation
+structure), the inbound-email adapter (Graph parsing + safe attachment resolution), the
+notifier, the PDF extractor (mocked vision client), the application use case (fakes), the
+FastAPI endpoints (`TestClient` with the use case overridden), and the observability helpers.
+
+### Live (opt-in) test
+
+One test runs the real agent end-to-end. It is **deselected by default** and runs only when
+you opt in with `-m live` **and** `OPENAI_API_KEY` is set in your shell environment (a `.env`
+file is not loaded for tests, so it stays skipped during a normal run):
+
+```bash
+# PowerShell — provide the key in the environment, then select the live marker
+$env:OPENAI_API_KEY = "sk-..."; uv run pytest -m live
+```
 
 ## Design notes
 
@@ -149,7 +194,3 @@ by default** and skipped unless `OPENAI_API_KEY` is present in the environment.
 - **Robust:** unreadable PDFs, missing attachments, and partial extractions return clear
   errors or warnings instead of crashing.
 - **Private:** `.env` and raw email/PDF content are never committed or written to logs.
-
-## Roadmap
-
-A Docker Compose stack is delivered as a subsequent increment.

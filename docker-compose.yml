@@ -1,0 +1,64 @@
+# Invoice-intake agent stack: FastAPI app + MLflow tracking server (SQLite backend).
+# Portable: named volumes (no host-absolute paths), pinned base image, non-root user,
+# healthchecks, env_file. Both services share one built image.
+
+services:
+  mlflow:
+    image: invoice-intake-agent:latest
+    command:
+      - mlflow
+      - server
+      - --backend-store-uri
+      - sqlite:////mlflow/mlflow.db
+      - --artifacts-destination
+      - /mlflow/artifacts
+      - --host
+      - 0.0.0.0
+      - --port
+      - "5000"
+      # Allow the in-network service name (app -> mlflow:5000) plus localhost for the
+      # browser UI and the container healthcheck. MLflow's security middleware rejects
+      # any other Host header (DNS-rebinding protection).
+      - --allowed-hosts
+      - "mlflow:5000,localhost:5000,127.0.0.1:5000"
+    volumes:
+      - mlflow-data:/mlflow
+    ports:
+      - "5000:5000"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:5000/health').status==200 else 1)"
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+    restart: unless-stopped
+
+  app:
+    build: .
+    image: invoice-intake-agent:latest
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      INPUT_DIR: /app/data
+      OUTPUT_DIR: /app/output
+      # MLflow tries to capture the source Git SHA; git isn't in the image, so silence it.
+      GIT_PYTHON_REFRESH: quiet
+    volumes:
+      - ./data:/app/data:ro
+      - app-output:/app/output
+    ports:
+      - "8000:8000"
+    depends_on:
+      mlflow:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  mlflow-data:
+  app-output:
