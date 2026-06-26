@@ -102,6 +102,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     ) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
+    except Exception as exc:  # last-resort guard: a clean message, never a raw traceback
+        print(f"error: unexpected failure ({type(exc).__name__}): {exc}", file=sys.stderr)
+        return 1
 
     print(notification.summary)
     print(f"\n[written] {settings.output_dir / 'outbound_email.txt'}")

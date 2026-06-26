@@ -3,6 +3,8 @@
 import json
 from decimal import Decimal
 
+import pytest
+
 from invoice_agent.domain.models import (
     InvoiceData,
     LineItem,
@@ -10,7 +12,11 @@ from invoice_agent.domain.models import (
     ShipTo,
     TaxBreakdown,
 )
-from invoice_agent.infrastructure.notifier import FileNotificationSender, render_summary
+from invoice_agent.infrastructure.notifier import (
+    FileNotificationSender,
+    NotificationError,
+    render_summary,
+)
 
 
 def _sample() -> InvoiceData:
@@ -67,3 +73,13 @@ def test_render_summary_sections_and_joined_allocation():
     assert "Tax (ON" in text and "Tax (QC" in text
     assert "allocation: A-1 Qty 10" in text  # joined list, not a python repr
     assert "['" not in text
+
+
+def test_send_write_failure_raises_notification_error(settings, tmp_path):
+    blocker = tmp_path / "blocker"
+    blocker.write_text("x", encoding="utf-8")  # a FILE where a directory is expected
+    blocked = settings.model_copy(update={"output_dir": blocker / "output"})
+    with pytest.raises(NotificationError):
+        FileNotificationSender(blocked).send(
+            OutboundNotification(summary="x", payload=InvoiceData())
+        )
