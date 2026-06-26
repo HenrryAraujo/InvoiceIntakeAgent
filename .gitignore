@@ -216,3 +216,18 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# --- Invoice-intake agent (Phase 0) ---
+# Runtime artifacts
+output_data/
+mlruns/
+mlflow.db
+mlflow.db-journal
+mlflow.db-wal
+mlartifacts/
+
+# Provided input data — never commit raw email/PDF content (AC7)
+input_data/Email.json
+input_data/Invoice.pdf
+input_data/*.pdf
+input_data/*.png
