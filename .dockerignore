@@ -21,7 +21,7 @@ dist/
 .env
 
 # Runtime artifacts
-output/
+output_data/
 mlruns/
 mlartifacts/
 mlflow.db
@@ -29,7 +29,7 @@ mlflow.db-journal
 mlflow.db-wal
 
 # Provided input data — mounted at runtime, never baked into the image
-data/
+input_data/
 
 # Tests (not needed in the runtime image)
 tests/

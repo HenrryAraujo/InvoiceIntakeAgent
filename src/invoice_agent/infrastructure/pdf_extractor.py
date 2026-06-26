@@ -1,4 +1,5 @@
-"""PDF invoice extractor adapter.
+"""
+PDF invoice extractor adapter.
 
 Loads the PDF with PyMuPDF (text per page + rendered page images, DPI/page capped) and
 issues a **single** ``gpt-5`` vision call via the OpenAI Responses API to produce a
@@ -10,6 +11,7 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, Optional
@@ -19,6 +21,8 @@ import pymupdf
 from invoice_agent.config import Settings
 from invoice_agent.domain.models import InboundEmail, InvoiceData
 from invoice_agent.infrastructure.observability import TokenUsage
+
+logger = logging.getLogger(__name__)
 
 _PDF_TEXT_CAP = 6000
 _BODY_CAP = 2000
@@ -93,6 +97,7 @@ class PdfInvoiceExtractor:
 
     def extract(self, pdf_path: Path, email: InboundEmail) -> InvoiceData:
         self.last_usage = TokenUsage()
+        logger.info("Extracting invoice from %s", pdf_path.name)
         warnings: list[str] = []
         pdf_text, images = self._render(pdf_path, warnings)
         if not images:
@@ -105,9 +110,20 @@ class PdfInvoiceExtractor:
         except Exception as exc:  # single call — surface as partial result, never crash
             warnings.append(f"Invoice extraction call failed: {type(exc).__name__}.")
             return InvoiceData(validation_passed=False, warnings=warnings)
-        return self._map(raw, email, warnings)
+        data = self._map(raw, email, warnings)
+        logger.info(
+            "Extraction complete: coverage=%.1f%%, validation_passed=%s",
+            data.field_coverage_pct,
+            data.validation_passed,
+        )
+        return data
 
     def _render(self, pdf_path: Path, warnings: list[str]) -> tuple[str, list[str]]:
+        logger.info(
+            "Rendering up to %d page(s) at %d DPI",
+            self._settings.max_pages,
+            self._settings.render_dpi,
+        )
         try:
             doc = pymupdf.open(pdf_path)
         except Exception:
@@ -160,6 +176,7 @@ class PdfInvoiceExtractor:
                 }
             )
 
+        logger.info("Calling vision model %s", self._settings.extractor_model)
         response = self._ensure_client().responses.create(
             model=self._settings.extractor_model,
             instructions=_SYSTEM,

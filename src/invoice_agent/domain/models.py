@@ -1,4 +1,5 @@
-"""Domain models (Pydantic v2 value objects / entities).
+"""
+Domain models (Pydantic v2 value objects / entities).
 
 Monetary values and quantities use ``Decimal`` to avoid rounding drift. All extracted
 invoice fields are optional/nullable; lenient *before* validators keep extraction robust
@@ -7,6 +8,7 @@ never crashes validation of the whole payload).
 """
 
 from decimal import Decimal, InvalidOperation
+from enum import Enum
 from typing import Annotated, Optional
 
 from pydantic import BaseModel, BeforeValidator, ConfigDict, Field
@@ -132,8 +134,52 @@ class InvoiceData(BaseModel):
     field_coverage_pct: float = 0.0
 
 
+class Persona(BaseModel):
+    """An acting Customer Service persona with a Delegation-of-Authority approval limit."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    key: str
+    title: str
+    approval_limit: Money = None
+    currency: str = "CAD"
+
+
+class DecisionStatus(str, Enum):
+    """Outcome of the Human-in-the-Loop approval gate."""
+
+    AUTO_APPROVED = "AUTO_APPROVED"
+    APPROVAL_REQUIRED = "APPROVAL_REQUIRED"
+    ON_HOLD = "ON_HOLD"
+
+
+class CheckResult(BaseModel):
+    """A single deterministic policy check shown on the decision card."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    name: str
+    passed: bool
+    detail: OptStr = None
+
+
+class ApprovalDecision(BaseModel):
+    """Deterministic routing decision attached to an outbound notification."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    status: DecisionStatus
+    acting_persona: str
+    approval_limit: Money = None
+    invoice_total: Money = None
+    reason: str
+    required_action: str
+    checks: list[CheckResult] = Field(default_factory=list)
+
+
 class OutboundNotification(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     summary: str
     payload: InvoiceData
+    decision: Optional[ApprovalDecision] = None

@@ -27,12 +27,43 @@ def test_cli_happy_path(tmp_path, monkeypatch, capsys):
         summary="SUMMARY-LINE", payload=InvoiceData(invoice_number="N1")
     )
     monkeypatch.setattr(cli, "get_settings", lambda: _settings(tmp_path))
-    monkeypatch.setattr(cli, "build_use_case", lambda settings, email: _FakeUseCase(notification))
+    monkeypatch.setattr(
+        cli, "build_use_case", lambda settings, email, persona_key=None: _FakeUseCase(notification)
+    )
 
     rc = cli.main(["--email", "x.json"])
 
     assert rc == 0
     assert "SUMMARY-LINE" in capsys.readouterr().out
+
+
+def test_cli_persona_flag_and_decision_banner(tmp_path, monkeypatch, capsys):
+    from invoice_agent.domain.models import ApprovalDecision, DecisionStatus
+
+    decision = ApprovalDecision(
+        status=DecisionStatus.APPROVAL_REQUIRED,
+        acting_persona="Customer Service Representative",
+        reason="over limit",
+        required_action="Request approval from Finance Manager.",
+    )
+    notification = OutboundNotification(
+        summary="SUMMARY-LINE", payload=InvoiceData(invoice_number="N1"), decision=decision
+    )
+    captured: dict = {}
+
+    def _fake_build(settings, email, persona_key=None):
+        captured["persona_key"] = persona_key
+        return _FakeUseCase(notification)
+
+    monkeypatch.setattr(cli, "get_settings", lambda: _settings(tmp_path))
+    monkeypatch.setattr(cli, "build_use_case", _fake_build)
+
+    rc = cli.main(["--email", "x.json", "--persona", "supervisor"])
+
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert captured["persona_key"] == "supervisor"
+    assert "[decision] APPROVAL_REQUIRED" in out
 
 
 def test_cli_missing_key_returns_2(tmp_path, monkeypatch, capsys):
@@ -47,7 +78,7 @@ def test_cli_missing_key_returns_2(tmp_path, monkeypatch, capsys):
 def test_cli_unexpected_error_is_clean(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(cli, "get_settings", lambda: _settings(tmp_path))
 
-    def _boom(settings, email):
+    def _boom(settings, email, persona_key=None):
         raise RuntimeError("kaboom")
 
     monkeypatch.setattr(cli, "build_use_case", _boom)

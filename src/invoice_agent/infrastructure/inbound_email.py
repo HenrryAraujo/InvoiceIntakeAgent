@@ -1,4 +1,5 @@
-"""Mock inbound-email adapter.
+"""
+Mock inbound-email adapter.
 
 Parses the provided Microsoft Graph message envelope (``Email.json``) into the domain
 ``InboundEmail`` and resolves the referenced PDF attachment to a local file under the
@@ -8,9 +9,12 @@ configured input directory, with strict path-safety checks.
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 
 from invoice_agent.domain.models import Attachment, InboundEmail
+
+logger = logging.getLogger(__name__)
 
 _PDF_SUFFIX = ".pdf"
 _PDF_CONTENT_TYPES = {"application/pdf", "application/x-pdf"}
@@ -32,6 +36,7 @@ class JsonFileInboundEmailSource:
         self._input_dir = Path(input_dir)
 
     def load(self) -> InboundEmail:
+        logger.info("Loading inbound email: %s", self._email_path.name)
         try:
             raw = json.loads(self._email_path.read_text(encoding="utf-8"))
         except FileNotFoundError as exc:
@@ -94,7 +99,9 @@ class JsonFileInboundEmailSource:
             raise AttachmentResolutionError(
                 f"Expected exactly one PDF attachment; found {len(pdfs)}."
             )
-        return self._safe_path(pdfs[0].name or "")
+        resolved = self._safe_path(pdfs[0].name or "")
+        logger.info("Resolved PDF attachment: %s", resolved.name)
+        return resolved
 
     @staticmethod
     def _is_pdf(attachment: Attachment) -> bool:

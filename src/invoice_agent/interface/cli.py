@@ -1,4 +1,5 @@
-"""CLI entrypoint and composition root.
+"""
+CLI entrypoint and composition root.
 
 Wires the concrete adapters into ``ProcessInvoiceUseCase`` and runs a single invoice
 through the agent. The same use case is reused by the FastAPI interface (Phase 2).
@@ -7,7 +8,6 @@ through the agent. The same use case is reused by the FastAPI interface (Phase 2
 from __future__ import annotations
 
 import argparse
-import logging
 import sys
 from collections.abc import Sequence
 from pathlib import Path
@@ -25,6 +25,7 @@ from invoice_agent.infrastructure.inbound_email import (
 from invoice_agent.infrastructure.notifier import FileNotificationSender, NotificationError
 from invoice_agent.infrastructure.observability import make_tracer
 from invoice_agent.infrastructure.pdf_extractor import PdfInvoiceExtractor
+from invoice_agent.logging_setup import configure_logging
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -34,8 +35,15 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--email",
-        default="./data/Email.json",
-        help="Path to the inbound email JSON (default: ./data/Email.json).",
+        default="./input_data/Email.json",
+        help="Path to the inbound email JSON (default: ./input_data/Email.json).",
+    )
+    parser.add_argument(
+        "--persona",
+        choices=["rep", "supervisor"],
+        default=None,
+        help="Acting approver persona for the approval decision "
+        "(default: ACTIVE_PERSONA from settings).",
     )
     return parser
 
@@ -44,11 +52,13 @@ def build_use_case(
     settings: Settings,
     email_path: str,
     input_dir: Path | None = None,
+    persona_key: str | None = None,
 ) -> ProcessInvoiceUseCase:
     """Composition root: construct adapters and inject them into the use case.
 
     ``input_dir`` overrides where the PDF attachment is resolved (used by the API's
-    multipart path); it defaults to ``settings.input_dir``.
+    multipart path); it defaults to ``settings.input_dir``. ``persona_key`` selects the
+    acting approver persona for the deterministic approval decision.
     """
     source = JsonFileInboundEmailSource(
         email_path=Path(email_path),
@@ -57,25 +67,14 @@ def build_use_case(
     extractor = PdfInvoiceExtractor(settings)
     notifier = FileNotificationSender(settings)
     tracer = make_tracer(settings)
-    runner = AgentInvoiceRunner(settings, extractor, notifier, tracer=tracer)
+    persona = settings.resolve_persona(persona_key)
+    runner = AgentInvoiceRunner(settings, extractor, notifier, tracer=tracer, persona=persona)
     return ProcessInvoiceUseCase(source, runner)
-
-
-def _configure_logging() -> None:
-    """Surface invoice_agent INFO logs (e.g. the agent tool sequence) on stdout."""
-    app_logger = logging.getLogger("invoice_agent")
-    if not app_logger.handlers:
-        handler = logging.StreamHandler(sys.stdout)
-        handler.setFormatter(logging.Formatter("%(message)s"))
-        app_logger.addHandler(handler)
-        app_logger.setLevel(logging.INFO)
-        app_logger.propagate = False
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     """Entry point. Returns a process exit code."""
     args = _build_parser().parse_args(argv)
-    _configure_logging()
 
     try:
         settings: Settings = get_settings()
@@ -83,6 +82,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         print("Configuration error — startup aborted:", file=sys.stderr)
         print(exc, file=sys.stderr)
         return 2
+
+    configure_logging(settings)
 
     if not settings.openai_api_key:
         print(
@@ -92,7 +93,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
 
     try:
-        use_case = build_use_case(settings, args.email)
+        use_case = build_use_case(settings, args.email, persona_key=args.persona)
         notification = use_case.execute()
     except (
         InboundEmailError,
@@ -106,6 +107,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"error: unexpected failure ({type(exc).__name__}): {exc}", file=sys.stderr)
         return 1
 
+    if notification.decision is not None:
+        decision = notification.decision
+        print(f"[decision] {decision.status.value}: {decision.required_action}\n")
     print(notification.summary)
     print(f"\n[written] {settings.output_dir / 'outbound_email.txt'}")
     print(f"[written] {settings.output_dir / 'outbound_email.json'}")

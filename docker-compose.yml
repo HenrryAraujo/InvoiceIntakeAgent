@@ -45,13 +45,13 @@ services:
         required: false
     environment:
       MLFLOW_TRACKING_URI: http://mlflow:5000
-      INPUT_DIR: /app/data
-      OUTPUT_DIR: /app/output
+      INPUT_DIR: /app/input_data
+      OUTPUT_DIR: /app/output_data
       # MLflow tries to capture the source Git SHA; git isn't in the image, so silence it.
       GIT_PYTHON_REFRESH: quiet
     volumes:
-      - ./data:/app/data:ro
-      - app-output:/app/output
+      - ./input_data:/app/input_data:ro
+      - app-output:/app/output_data
     ports:
       - "8000:8000"
     depends_on:

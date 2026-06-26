@@ -4,10 +4,14 @@ import json
 from decimal import Decimal
 
 from invoice_agent.domain.models import (
+    ApprovalDecision,
+    CheckResult,
+    DecisionStatus,
     InboundEmail,
     InvoiceData,
     LineItem,
     OutboundNotification,
+    Persona,
     ShipTo,
     TaxBreakdown,
 )
@@ -115,3 +119,27 @@ def test_outbound_notification_shape():
     body = json.loads(notification.model_dump_json())
     assert body["summary"] == "hi"
     assert body["payload"]["invoice_number"] == "N1"
+    assert body["decision"] is None  # absent unless an approval decision is attached
+
+
+def test_persona_and_decision_shape():
+    persona = Persona(key="rep", title="Customer Service Representative",
+                      approval_limit=Decimal("10000"), currency="CAD")
+    assert persona.approval_limit == Decimal("10000")
+
+    decision = ApprovalDecision(
+        status=DecisionStatus.APPROVAL_REQUIRED,
+        acting_persona=persona.title,
+        approval_limit=persona.approval_limit,
+        invoice_total=Decimal("129150.06"),
+        reason="exceeds limit",
+        required_action="Request approval from Finance Manager.",
+        checks=[CheckResult(name="Authority limit", passed=False, detail="over limit")],
+    )
+    notification = OutboundNotification(
+        summary="hi", payload=InvoiceData(invoice_number="N1"), decision=decision
+    )
+    body = json.loads(notification.model_dump_json())
+    assert body["decision"]["status"] == "APPROVAL_REQUIRED"
+    assert body["decision"]["invoice_total"] == "129150.06"  # Decimal serialized as string
+    assert body["decision"]["checks"][0]["passed"] is False

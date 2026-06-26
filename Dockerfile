@@ -25,7 +25,7 @@ RUN uv sync --frozen --no-dev
 
 # Non-root user + writable dirs that named volumes inherit ownership from
 RUN useradd --create-home --uid 10001 appuser \
-    && mkdir -p /app/output /mlflow/artifacts \
+    && mkdir -p /app/output_data /mlflow/artifacts \
     && chown -R appuser:appuser /app /mlflow
 
 USER appuser

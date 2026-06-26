@@ -1,4 +1,5 @@
-"""File-writing notification adapter + deterministic summary renderer.
+"""
+File-writing notification adapter + deterministic summary renderer.
 
 ``send`` writes the human-readable summary (``outbound_email.txt``) and the structured
 payload (``outbound_email.json``) to the configured output directory. ``render_summary``
@@ -8,11 +9,14 @@ when the agent does not supply one.
 
 from __future__ import annotations
 
+import logging
 from decimal import Decimal
 from typing import Optional
 
 from invoice_agent.config import Settings
-from invoice_agent.domain.models import InvoiceData, OutboundNotification
+from invoice_agent.domain.models import ApprovalDecision, InvoiceData, OutboundNotification
+
+logger = logging.getLogger(__name__)
 
 _TXT_FILENAME = "outbound_email.txt"
 _JSON_FILENAME = "outbound_email.json"
@@ -37,20 +41,52 @@ class FileNotificationSender:
 
         txt_path = out_dir / _TXT_FILENAME
         json_path = out_dir / _JSON_FILENAME
+        if notification.decision is not None:
+            body = render_decision_card(notification.decision) + "\n\n" + notification.summary
+        else:
+            body = notification.summary
         try:
-            txt_path.write_text(notification.summary, encoding="utf-8")
+            txt_path.write_text(body, encoding="utf-8")
             json_path.write_text(
-                notification.payload.model_dump_json(indent=2),
+                notification.model_dump_json(indent=2),
                 encoding="utf-8",
             )
         except (OSError, ValueError) as exc:
             raise NotificationError(f"Could not write notification files: {exc}") from exc
 
+        logger.info("Notification written to %s and %s", txt_path.name, json_path.name)
         return f"Notification written to {txt_path} and {json_path}."
 
 
 def _fmt_money(value: Optional[Decimal]) -> str:
     return "N/A" if value is None else f"{value}"
+
+
+def render_decision_card(decision: ApprovalDecision) -> str:
+    """Render the Human-in-the-Loop decision card prepended to the notification text."""
+    banner = {
+        "AUTO_APPROVED": "AUTO-APPROVED - WITHIN AUTHORITY",
+        "APPROVAL_REQUIRED": "ACTION REQUIRED - APPROVAL NEEDED",
+        "ON_HOLD": "ON HOLD - HUMAN REVIEW REQUIRED",
+    }.get(decision.status.value, decision.status.value)
+
+    lines: list[str] = [
+        "=" * 48,
+        f"DECISION: {banner}",
+        "=" * 48,
+        f"- Acting persona: {decision.acting_persona}",
+        f"- Invoice total: {_fmt_money(decision.invoice_total)}",
+        f"- Approval limit: {_fmt_money(decision.approval_limit)}",
+        f"- Reason: {decision.reason}",
+        f"- Required action: {decision.required_action}",
+        "",
+        "POLICY CHECKS",
+    ]
+    for check in decision.checks:
+        mark = "PASS" if check.passed else "FAIL"
+        detail = f" - {check.detail}" if check.detail else ""
+        lines.append(f"- [{mark}] {check.name}{detail}")
+    return "\n".join(lines)
 
 
 def render_summary(data: InvoiceData) -> str:

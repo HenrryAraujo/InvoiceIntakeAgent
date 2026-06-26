@@ -219,7 +219,7 @@ __marimo__/
 
 # --- Invoice-intake agent (Phase 0) ---
 # Runtime artifacts
-output/
+output_data/
 mlruns/
 mlflow.db
 mlflow.db-journal
@@ -227,7 +227,7 @@ mlflow.db-wal
 mlartifacts/
 
 # Provided input data — never commit raw email/PDF content (AC7)
-data/Email.json
-data/Invoice.pdf
-data/*.pdf
-data/*.png
+input_data/Email.json
+input_data/Invoice.pdf
+input_data/*.pdf
+input_data/*.png

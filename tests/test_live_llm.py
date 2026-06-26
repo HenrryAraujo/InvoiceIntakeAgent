@@ -21,9 +21,9 @@ def test_live_pipeline_extracts_invoice_number():
     from invoice_agent.config import get_settings
     from invoice_agent.interface.cli import build_use_case
 
-    email_path = Path("data/Email.json")
+    email_path = Path("input_data/Email.json")
     if not email_path.is_file():
-        pytest.skip("data/Email.json is not present")
+        pytest.skip("input_data/Email.json is not present")
 
     use_case = build_use_case(get_settings(), str(email_path))
     notification = use_case.execute()

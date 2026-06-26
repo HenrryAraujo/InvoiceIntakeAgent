@@ -15,6 +15,7 @@ from invoice_agent.domain.models import (
 from invoice_agent.infrastructure.notifier import (
     FileNotificationSender,
     NotificationError,
+    render_decision_card,
     render_summary,
 )
 
@@ -54,10 +55,11 @@ def test_send_writes_both_files(settings):
     assert txt.is_file() and js.is_file()
     assert "written" in confirmation.lower()
 
-    back = InvoiceData.model_validate(json.loads(js.read_text(encoding="utf-8")))
-    assert back.invoice_number == "INV-1"
-    assert [t.jurisdiction for t in back.taxes] == ["ON", "QC"]
-    assert back.ship_to[0].allocation == ["A-1 Qty 10"]
+    back = OutboundNotification.model_validate(json.loads(js.read_text(encoding="utf-8")))
+    assert back.payload.invoice_number == "INV-1"
+    assert [t.jurisdiction for t in back.payload.taxes] == ["ON", "QC"]
+    assert back.payload.ship_to[0].allocation == ["A-1 Qty 10"]
+    assert back.decision is None  # no decision supplied -> null in JSON
 
 
 def test_send_creates_missing_output_dir(settings):
@@ -83,3 +85,50 @@ def test_send_write_failure_raises_notification_error(settings, tmp_path):
         FileNotificationSender(blocked).send(
             OutboundNotification(summary="x", payload=InvoiceData())
         )
+
+
+def test_send_includes_decision_card_and_full_json(settings):
+    from invoice_agent.domain.models import ApprovalDecision, CheckResult, DecisionStatus
+
+    data = _sample()
+    decision = ApprovalDecision(
+        status=DecisionStatus.APPROVAL_REQUIRED,
+        acting_persona="Customer Service Representative",
+        approval_limit=Decimal("10000"),
+        invoice_total=Decimal("1229.75"),
+        reason="exceeds limit",
+        required_action="Request approval from Finance Manager.",
+        checks=[CheckResult(name="Authority limit", passed=False, detail="over limit")],
+    )
+    FileNotificationSender(settings).send(
+        OutboundNotification(summary=render_summary(data), payload=data, decision=decision)
+    )
+    txt = (settings.output_dir / "outbound_email.txt").read_text(encoding="utf-8")
+    assert "ACTION REQUIRED" in txt
+    assert "[FAIL] Authority limit" in txt
+    assert "INVOICE INTAKE" in txt  # summary still present below the card
+    js = json.loads((settings.output_dir / "outbound_email.json").read_text(encoding="utf-8"))
+    assert js["decision"]["status"] == "APPROVAL_REQUIRED"
+    assert js["payload"]["invoice_number"] == "INV-1"
+
+
+def test_render_decision_card_marks_checks():
+    from invoice_agent.domain.models import ApprovalDecision, CheckResult, DecisionStatus
+
+    card = render_decision_card(
+        ApprovalDecision(
+            status=DecisionStatus.AUTO_APPROVED,
+            acting_persona="Customer Service Supervisor",
+            approval_limit=Decimal("150000"),
+            invoice_total=Decimal("129150.06"),
+            reason="within authority",
+            required_action="Approved - routed for processing.",
+            checks=[
+                CheckResult(name="Authority limit", passed=True, detail="ok"),
+                CheckResult(name="Duplicate check", passed=False, detail="maybe dup"),
+            ],
+        )
+    )
+    assert "AUTO-APPROVED" in card
+    assert "[PASS] Authority limit" in card
+    assert "[FAIL] Duplicate check" in card

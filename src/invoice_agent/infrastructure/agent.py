@@ -1,4 +1,5 @@
-"""OpenAI Agents SDK runner with exactly two tools.
+"""
+OpenAI Agents SDK runner with exactly two tools.
 
 The agent orchestrates the required tool sequence: ``extract_invoice_data`` then
 ``send_notification``. Tool dependencies (extractor, notifier, the loaded email and the
@@ -26,7 +27,13 @@ from agents import (
 from openai.types.shared import Reasoning
 
 from invoice_agent.config import Settings
-from invoice_agent.domain.models import InboundEmail, InvoiceData, OutboundNotification
+from invoice_agent.domain.approval import evaluate_approval
+from invoice_agent.domain.models import (
+    InboundEmail,
+    InvoiceData,
+    OutboundNotification,
+    Persona,
+)
 from invoice_agent.domain.ports import InvoiceExtractor, NotificationSender, RunTracer
 from invoice_agent.infrastructure.notifier import render_summary
 from invoice_agent.infrastructure.observability import (
@@ -50,6 +57,7 @@ class _ToolContext:
     pdf_path: Path
     extractor: InvoiceExtractor
     notifier: NotificationSender
+    persona: Persona
     extracted: InvoiceData | None = None
     notification: OutboundNotification | None = None
     tool_calls: list[str] = field(default_factory=list)
@@ -63,6 +71,7 @@ def extract_invoice_data(ctx: RunContextWrapper[_ToolContext]) -> str:
     data as a JSON string. Call this exactly once, before send_notification."""
     context = ctx.context
     context.tool_calls.append("extract_invoice_data")
+    logger.info("Tool start: extract_invoice_data")
     started = time.perf_counter()
     data = context.extractor.extract(context.pdf_path, context.email)
     context.timings["extract_invoice_data"] = (time.perf_counter() - started) * 1000.0
@@ -78,14 +87,30 @@ def send_notification(ctx: RunContextWrapper[_ToolContext], summary: str) -> str
     once, after extract_invoice_data."""
     context = ctx.context
     context.tool_calls.append("send_notification")
+    logger.info("Tool start: send_notification")
     if context.extracted is None:
         return "ERROR: extract_invoice_data has not been called yet; call it first."
     started = time.perf_counter()
     text = (summary or "").strip() or render_summary(context.extracted)
-    notification = OutboundNotification(summary=text, payload=context.extracted)
+    decision = evaluate_approval(
+        context.extracted,
+        context.persona,
+        hold_on_duplicate=context.settings.hold_on_duplicate,
+        escalation_contact=context.settings.escalation_contact,
+    )
+    notification = OutboundNotification(
+        summary=text, payload=context.extracted, decision=decision
+    )
     confirmation = context.notifier.send(notification)
     context.timings["send_notification"] = (time.perf_counter() - started) * 1000.0
     context.notification = notification
+    logger.info(
+        "Approval decision: %s (persona=%s, total=%s, limit=%s)",
+        decision.status.value,
+        decision.acting_persona,
+        decision.invoice_total,
+        decision.approval_limit,
+    )
     return confirmation
 
 
@@ -134,11 +159,13 @@ class AgentInvoiceRunner:
         extractor: InvoiceExtractor,
         notifier: NotificationSender,
         tracer: RunTracer | None = None,
+        persona: Persona | None = None,
     ) -> None:
         self._settings = settings
         self._extractor = extractor
         self._notifier = notifier
         self._tracer: RunTracer = tracer if tracer is not None else NullRunTracer()
+        self._persona: Persona = persona if persona is not None else settings.resolve_persona()
         self.last_tool_sequence: list[str] = []
 
         if settings.openai_api_key:
@@ -155,12 +182,19 @@ class AgentInvoiceRunner:
         )
 
     def run(self, email: InboundEmail, pdf_path: Path) -> OutboundNotification:
+        logger.info(
+            "Processing invoice for persona '%s' (limit=%s %s)",
+            self._persona.title,
+            self._persona.approval_limit,
+            self._persona.currency,
+        )
         context = _ToolContext(
             settings=self._settings,
             email=email,
             pdf_path=pdf_path,
             extractor=self._extractor,
             notifier=self._notifier,
+            persona=self._persona,
         )
         prompt = (
             "Process this inbound vendor invoice email and notify Customer Service.\n"
@@ -250,6 +284,12 @@ class AgentInvoiceRunner:
             tags = {
                 "tool_sequence": " -> ".join(self.last_tool_sequence) or "<none>",
                 "status": status,
+                "persona": self._persona.key,
+                "decision_status": (
+                    notification.decision.status.value
+                    if (notification is not None and notification.decision is not None)
+                    else "none"
+                ),
                 "invoice_number_present": str(bool(payload is not None and payload.invoice_number)),
                 "email_sha256": _sha256_text(f"{email.subject}|{email.from_}|{email.body}"),
                 "pdf_sha256": _sha256_file(pdf_path),

@@ -1,4 +1,5 @@
-"""MLflow observability — privacy-safe, deterministic per-run telemetry.
+"""
+MLflow observability — privacy-safe, deterministic per-run telemetry.
 
 Only metrics, safe params, and content **hashes** are recorded. No raw email/PDF text,
 prompts, responses, or rendered images are ever logged (AC7). MLflow autologging is **not**

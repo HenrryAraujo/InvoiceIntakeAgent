@@ -1,7 +1,5 @@
-"""Single-command entrypoint for the invoice-intake agent.
-
-Phase 0 provides configuration bootstrap only; the full processing pipeline
-(agent + tools) is wired in Phase 1. See the implementation manifest, section 14.
+"""
+    Single-command entrypoint for the invoice-intake agent.
 """
 
 from __future__ import annotations

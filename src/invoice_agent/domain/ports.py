@@ -1,4 +1,5 @@
-"""Port Protocols — the abstract boundaries the application depends on (DIP).
+"""
+Port Protocols — the abstract boundaries the application depends on (DIP).
 
 Concrete adapters in the infrastructure layer implement these; the use case never
 imports infrastructure directly.
